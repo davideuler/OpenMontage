@@ -3,10 +3,15 @@
 ## When to Use
 
 When writing prompts for the video generation family (`video_selector`, `heygen_video`,
-`wan_video`, `hunyuan_video`, `ltx_video_local`, `ltx_video_modal`, `cogvideo_video`).
+`wan_video`, `wan_video_api`, `hunyuan_video`, `ltx_video_local`, `ltx_video_modal`,
+`cogvideo_video`).
 This skill covers the universal prompt vocabulary that works across all video generation models.
 
 For model-specific tips, see the linked guides below.
+
+Layer 3: `.agents/skills/ai-video-gen` (HeyGen/fal.ai gateways),
+`.agents/skills/ltx2` (LTX-2), `.agents/skills/dashscope` (Wan T2V / I2V via
+Alibaba DashScope).
 
 ## Model-Specific Guides
 
@@ -19,7 +24,8 @@ For model-specific tips, see the linked guides below.
 | **HunyuanVideo 1.5** | [Tencent Prompt Handbook](https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5/blob/main/assets/HunyuanVideo_1_5_Prompt_Handbook_EN.md) | Formula: Subject + Motion + Scene + [Shot] + [Camera] + [Lighting] + [Style] + [Atmosphere]. |
 | **Runway Gen-4** | [Runway Prompting Guide](https://help.runwayml.com/hc/en-us/articles/39789879462419-Gen-4-Video-Prompting-Guide) | "Focus on motion, not appearance." One scene per clip. Simplicity wins. |
 | **Kling 2.6** | [Kling Prompt Guide](https://fal.ai/learn/devs/kling-2-6-pro-prompt-guide) | 4-part structure. Supports `++emphasis++` syntax for key elements. |
-| **Wan 2.1 / CogVideoX** | Use this generic guide | No official prompt guide. Standard cinematographic vocabulary works well. |
+| **Wan 2.7 / 2.6 / 2.5 (DashScope API)** | [Aliyun Text-to-Video](https://help.aliyun.com/zh/model-studio/text-to-video-api-reference) · [Image-to-Video](https://help.aliyun.com/zh/model-studio/image-to-video-api-reference/) | Use `wan_video_api` for cloud T2V/I2V. Handles Chinese and English prompts natively; set `operation="image_to_video"` with `img_url` for I2V. Max 10s clips. |
+| **Wan 2.1 / CogVideoX (local)** | Use this generic guide | No official prompt guide. Standard cinematographic vocabulary works well. Local GPU path via `wan_video` / `cogvideo_video`. |
 
 ## Universal Prompt Formula
 
@@ -177,6 +183,71 @@ Put dialogue in quotation marks: `Character says: "Hello world."`
 4. **For consistency across clips** — repeat the same style/lighting/grade description.
 5. **Use seed values** — when you find a good result, save the seed for variations.
 6. **For Grok reference-image video** — assign each source image a clear role in the prompt using `<IMAGE_1>`, `<IMAGE_2>`, etc.
+
+## Wan Video via Alibaba DashScope (`wan_video_api`)
+
+Cloud path for the Wan video family that does not require a local GPU.
+Use when the project is already on the Alibaba Model Studio stack (paired
+with `qwen_image` / `wan_image` / `qwen_tts`) or when GPU is unavailable.
+
+### Models
+
+**Text-to-video:**
+
+| Model | Tier | ~Cost / clip | Max duration |
+|-------|------|-------------|--------------|
+| `wan2.7-t2v` | pro | ~$0.70 | 10s |
+| `wan2.5-t2v-plus` | plus | ~$0.50 | 10s |
+| `wan2.2-t2v-plus` | plus | ~$0.40 | 10s |
+
+**Image-to-video** (set `operation="image_to_video"` and pass `img_url`):
+
+| Model | Tier | ~Cost / clip | Max duration |
+|-------|------|-------------|--------------|
+| `wan2.7-i2v` | pro | ~$0.70 | 10s |
+| `wan2.5-i2v-plus` | plus | ~$0.50 | 10s |
+| `wan2.6-i2v-flash` | flash | ~$0.25 | 5s |
+
+Supported sizes: `1280*720`, `720*1280`, `960*960`, `1920*1080`, `1080*1920`
+(DashScope `W*H` string format, not a pixel list).
+
+### When to use T2V vs I2V
+
+- **T2V (`wan2.7-t2v`):** pure text prompt, the model composes a new scene.
+  Good for abstract shots, establishing shots, and content where no hero frame exists.
+- **I2V (`wan2.7-i2v`):** starts from an existing still (often a `wan_image` /
+  `qwen_image` / `flux_image` hero) and animates it. Strongly preferred for
+  keeping visual consistency across an explainer where the image stack is
+  already committed to a look.
+
+### Prompt guidance
+
+No official Wan prompt guide exists — use the universal formula in this file.
+Observed behavior on Wan 2.7:
+
+- Responds well to English cinematographic vocabulary (shot size, movement,
+  lens, lighting, style) and to Chinese prompts natively — do not pre-translate.
+- `prompt_extend=true` (default) lets DashScope auto-enrich short prompts; disable
+  when you want strict control over phrasing.
+- For I2V, describe **motion only**. Do not re-describe what is already in the
+  reference image; the model keeps identity and setting from `img_url`.
+- Keep a single scene per clip; cut between shots rather than asking for cuts
+  inside a prompt.
+- Audio is not generated — plan narration and music in the asset stage.
+
+### Example I2V prompt (Wan 2.7)
+
+```
+[Camera]: Slow push-in, handheld micro-jitter
+[Motion]: The beekeeper tilts the frame toward camera, golden honey
+          droplets tremble and release one by one into slow motion
+[Lighting]: Warm late-afternoon light unchanged from reference
+[Style]: Documentary cinematography, 35mm film grain, 24fps
+```
+
+Pair with `img_url` pointing to the hero image generated earlier
+(`wan_image` / `qwen_image` / `flux_image` output, uploaded to a URL the
+DashScope task can fetch).
 
 ## Example: Generic Prompt Template
 

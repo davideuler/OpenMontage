@@ -67,7 +67,7 @@ class WanVideoApi(BaseTool):
 
     dependencies = []  # checked dynamically via env var
     install_instructions = dashscope.INSTALL_INSTRUCTIONS
-    agent_skills = ["ai-video-gen"]
+    agent_skills = ["dashscope", "ai-video-gen"]
 
     capabilities = [
         "text_to_video",

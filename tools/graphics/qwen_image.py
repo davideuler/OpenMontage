@@ -63,7 +63,7 @@ class QwenImage(BaseTool):
 
     dependencies = []  # checked dynamically via env var
     install_instructions = dashscope.INSTALL_INSTRUCTIONS
-    agent_skills = []
+    agent_skills = ["dashscope"]
 
     capabilities = [
         "generate_image",

@@ -29,6 +29,7 @@ from tools.tool_registry import ToolRegistry
 from tools.audio.elevenlabs_tts import ElevenLabsTTS
 from tools.audio.openai_tts import OpenAITTS
 from tools.audio.piper_tts import PiperTTS
+from tools.audio.qwen_tts import QWEN_TTS_MODELS, QWEN_TTS_VOICES, QwenTTS
 from tools.audio.tts_selector import TTSSelector
 
 
@@ -92,6 +93,154 @@ class TestMusicGen:
         assert "generate_background_music" in tool.capabilities
 
 
+class TestQwenTTS:
+    def test_identity(self):
+        tool = QwenTTS()
+        info = tool.get_info()
+        assert info["name"] == "qwen_tts"
+        assert info["tier"] == "voice"
+        assert info["capability"] == "tts"
+        assert info["provider"] == "qwen"
+
+    def test_capabilities(self):
+        tool = QwenTTS()
+        assert "text_to_speech" in tool.capabilities
+        assert "voice_selection" in tool.capabilities
+        assert "chinese_dialects" in tool.capabilities
+
+    def test_cost_scales_with_text_length(self):
+        tool = QwenTTS()
+        short = tool.estimate_cost({"text": "Hi."})
+        long = tool.estimate_cost({"text": "x" * 1000})
+        assert long > short
+        assert short >= 0
+
+    def test_input_schema_voices_match_module(self):
+        tool = QwenTTS()
+        voices = tool.input_schema["properties"]["voice"]["enum"]
+        assert set(voices) == set(QWEN_TTS_VOICES)
+        assert "Cherry" in voices
+
+    def test_models_enumerated(self):
+        tool = QwenTTS()
+        models = tool.input_schema["properties"]["model"]["enum"]
+        assert set(models) == set(QWEN_TTS_MODELS)
+        assert "qwen-tts" in models
+        assert "qwen-tts-latest" in models
+
+    def test_status_unavailable_without_key(self, monkeypatch):
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+        monkeypatch.delenv("ALIYUN_DASHSCOPE_API_KEY", raising=False)
+        from tools.base_tool import ToolStatus
+        assert QwenTTS().get_status() == ToolStatus.UNAVAILABLE
+
+    def test_execute_without_key_returns_error(self, monkeypatch):
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+        monkeypatch.delenv("ALIYUN_DASHSCOPE_API_KEY", raising=False)
+        result = QwenTTS().execute({"text": "hello"})
+        assert result.success is False
+        assert "DASHSCOPE_API_KEY" in result.error
+
+    def test_execute_rejects_unknown_model(self, monkeypatch):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+        result = QwenTTS().execute({"text": "hi", "model": "nope"})
+        assert result.success is False
+        assert "Unknown qwen_tts model" in result.error
+
+    def test_execute_rejects_unknown_voice(self, monkeypatch):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+        result = QwenTTS().execute({"text": "hi", "voice": "Bogus"})
+        assert result.success is False
+        assert "Unknown qwen_tts voice" in result.error
+
+    def test_dialect_voice_requires_latest_model(self, monkeypatch):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+        result = QwenTTS().execute({"text": "hi", "voice": "Dylan", "model": "qwen-tts"})
+        assert result.success is False
+        assert "dialect" in result.error.lower()
+
+    def test_extract_audio_url_top_level(self):
+        body = {"output": {"audio": {"url": "https://example.com/a.mp3"}}}
+        assert QwenTTS._extract_audio_url(body) == "https://example.com/a.mp3"
+
+    def test_extract_audio_url_nested_choices(self):
+        body = {
+            "output": {
+                "choices": [
+                    {
+                        "message": {
+                            "content": [
+                                {"audio": {"url": "https://example.com/b.mp3"}}
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+        assert QwenTTS._extract_audio_url(body) == "https://example.com/b.mp3"
+
+    def test_extract_audio_url_missing(self):
+        assert QwenTTS._extract_audio_url({"output": {}}) is None
+
+    def test_execute_happy_path(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+
+        class FakeResponse:
+            def __init__(self, body):
+                self._body = body
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return self._body
+
+        captured = {}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["payload"] = json
+            return FakeResponse({
+                "request_id": "req-1",
+                "output": {"audio": {"url": "https://example.com/audio.mp3"}},
+                "usage": {"audio_tokens": 7},
+            })
+
+        def fake_download(url, output_path, timeout=120):
+            from pathlib import Path
+            p = Path(output_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"FAKE_AUDIO")
+            return p
+
+        import requests
+        from tools import _dashscope as dashscope_mod
+        monkeypatch.setattr(requests, "post", fake_post)
+        monkeypatch.setattr(dashscope_mod, "download_asset", fake_download)
+
+        out_path = tmp_path / "qwen.mp3"
+        result = QwenTTS().execute({
+            "text": "Hello world",
+            "voice": "Cherry",
+            "model": "qwen-tts-latest",
+            "output_path": str(out_path),
+        })
+
+        assert result.success is True, result.error
+        assert result.data["provider"] == "qwen"
+        assert result.data["model"] == "qwen-tts-latest"
+        assert result.data["voice"] == "Cherry"
+        assert result.data["request_id"] == "req-1"
+        assert result.data["audio_url"] == "https://example.com/audio.mp3"
+        assert result.artifacts == [str(out_path)]
+        assert out_path.read_bytes() == b"FAKE_AUDIO"
+        assert captured["payload"] == {
+            "model": "qwen-tts-latest",
+            "input": {"text": "Hello world", "voice": "Cherry"},
+        }
+        assert captured["headers"]["Authorization"] == "Bearer fake-key"
+        assert "X-DashScope-Async" not in captured["headers"]
+
+
 class TestNewToolsRegistry:
     def test_all_register(self):
         reg = ToolRegistry()
@@ -143,7 +292,7 @@ class TestCapabilityMetadata:
         catalog = reg.capability_catalog()
         assert "tts" in catalog
         providers = {item["provider"] for item in catalog["tts"] if item["provider"] != "selector"}
-        assert providers == {"elevenlabs", "google_tts", "openai", "piper"}
+        assert providers == {"elevenlabs", "google_tts", "openai", "piper", "qwen"}
 
 
 # ---- Animated Explainer Pipeline ----
