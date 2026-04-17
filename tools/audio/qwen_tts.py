@@ -71,7 +71,7 @@ class QwenTTS(BaseTool):
     install_instructions = dashscope.INSTALL_INSTRUCTIONS
     fallback = "openai_tts"
     fallback_tools = ["openai_tts", "elevenlabs_tts", "google_tts", "piper_tts"]
-    agent_skills = ["text-to-speech"]
+    agent_skills = ["dashscope", "text-to-speech"]
 
     capabilities = [
         "text_to_speech",

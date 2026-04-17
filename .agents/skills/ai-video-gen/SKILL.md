@@ -1,7 +1,7 @@
 ---
 name: ai-video-gen
 description: |
-  Generate AI videos from text prompts using multiple provider gateways. Use when: (1) Generating videos from text descriptions, (2) Creating AI-generated video clips for content production, (3) Image-to-video generation with a reference image, (4) Choosing between video generation providers (VEO, Kling, Sora, Runway, Seedance, MiniMax). Supports two gateways: HeyGen API and fal.ai API.
+  Generate AI videos from text prompts using multiple provider gateways. Use when: (1) Generating videos from text descriptions, (2) Creating AI-generated video clips for content production, (3) Image-to-video generation with a reference image, (4) Choosing between video generation providers (VEO, Kling, Sora, Runway, Seedance, MiniMax, Wan). Supports three gateways: HeyGen API, fal.ai API, and Alibaba DashScope.
 allowed-tools: mcp__heygen__*
 metadata:
   openclaw:
@@ -9,18 +9,22 @@ metadata:
       env_any:
         - HEYGEN_API_KEY
         - FAL_KEY
+        - DASHSCOPE_API_KEY
 ---
 
 # Video Generation (Multi-Gateway)
 
-Generate AI videos from text prompts. Supports multiple providers via two API gateways:
+Generate AI videos from text prompts. Supports multiple providers via three API gateways:
 
 | Gateway | Env Variable | Providers | Tool |
 |---------|-------------|-----------|------|
 | **fal.ai** | `FAL_KEY` | Kling v3/v2.1, MiniMax, VEO | `kling_video`, `minimax_video`, `veo_video` |
 | **HeyGen** | `HEYGEN_API_KEY` | VEO 3.1, Kling Pro, Sora v2, Runway Gen-4, Seedance | `heygen_video` |
+| **Alibaba DashScope** | `DASHSCOPE_API_KEY` | Wan 2.7 / 2.6 / 2.5 (text-to-video AND image-to-video) | `wan_video_api` |
 
 **IMPORTANT:** Always use `video_selector` instead of calling provider tools directly. The selector handles availability checks, cost comparison, and automatic fallback.
+
+For the DashScope gateway (Wan T2V / I2V) see the dedicated `dashscope` Layer 3 skill — it covers auth, the async task pattern shared with `wan_image` / `qwen_image`, model tiers, and size/duration limits. The rest of this page describes the HeyGen and fal.ai gateways.
 
 ## Authentication
 
