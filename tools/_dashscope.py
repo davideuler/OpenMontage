@@ -122,9 +122,11 @@ def download_asset(url: str, output_path: Path, *, timeout: int = 120) -> Path:
     import requests
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    resp = requests.get(url, timeout=timeout)
-    resp.raise_for_status()
-    output_path.write_bytes(resp.content)
+    with requests.get(url, stream=True, timeout=timeout) as resp:
+        resp.raise_for_status()
+        with open(output_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                f.write(chunk)
     return output_path
 
 
